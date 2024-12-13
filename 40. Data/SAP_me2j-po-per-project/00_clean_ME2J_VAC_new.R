@@ -117,6 +117,9 @@ dat <- dat %>%
       str_detect(wbs_element, "-EOS-") ~ "Emergency Outbreak Support",
       .default = "OTHER"
     )
+  )|>
+  mutate( #to fix the duplicated Malaria that WBS_element cannot solely solve
+    wbs_element_material = paste0(wbs_element,"-",material)
   )
 
 #drop cash support
@@ -129,6 +132,7 @@ dat <- dat %>% left_join(fund_names)
 #reorder
 dat <- dat |> 
   select(
+    wbs_element_material,
     purchasing_document,
     wbs_element,
     document_date,

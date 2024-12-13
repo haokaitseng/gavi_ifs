@@ -72,6 +72,7 @@ sappos2 <- sappos %>%
   filter(budget_period >= "2021") %>%  #drop entries before SAP integration in 2021
   filter(!(fund %in% drop_funds)) %>% #COVAX/C19, MICs, India
   select(
+    wbs_element_material,
     purchasing_document,
     wbs_element,
     document_date,
@@ -97,7 +98,11 @@ sappos2 <- sappos2 %>%
   mutate(
     wbs_element = str_remove(wbs_element, "-PAHO"),
     wbs_element = str_remove(wbs_element, "-MOH")
-    )
+    )|>
+  mutate(
+    wbs_element_material = str_remove(wbs_element_material, "-PAHO"),
+    wbs_element_material = str_remove(wbs_element_material, "-MOH")
+  )
 
 #add presentation codes 
 sappos2 <- left_join(sappos2, select(presentations, short_text=sap_short_text, 
@@ -109,17 +114,17 @@ sappos2 <- left_join(sappos2, select(presentations, short_text=sap_short_text,
     #Zero out the order quantities in the non-vaccine categories, so that when we collapse 
     #on order quantity, we are only left with the number of vaccine doses.
 sappos2 <- sappos2 %>% 
-    group_by(wbs_element, budget_period, fund_name) %>% 
+    group_by(wbs_element_material, wbs_element, budget_period, fund_name) %>% 
     fill(c(presentation, product_presentation), .direction = "updown") %>% 
     ungroup() %>% 
     mutate(doses = if_else(material_group=="9003", order_quantity, 0))
 
+#### Country contribution table ####
 
 #get cofi usd and dose totals
 country <- sappos2 %>% 
   filter(fund=="1000002") %>% 
-  group_by(
-    wbs_element, iso3, budget_period, vaccine_group_wbs, product_presentation,  #uniquely identified by product_presentation
+  group_by( wbs_element, iso3, budget_period, vaccine_group_wbs, product_presentation,  #uniquely identified by product_presentation
     programme_type
   ) |> 
   summarise(
@@ -133,7 +138,7 @@ country <- sappos2 %>%
 country_product <- sappos2 %>% 
   filter(fund=="1000002" & material_group=="9003") %>% 
   distinct(
-    wbs_element, iso3, budget_period, vaccine_group_wbs, short_text, presentation,  #can't include doc date because they can be different per wbs_element (i.e. vaccine PO and freight PO document date different)
+    wbs_element_material, wbs_element, iso3, budget_period, vaccine_group_wbs, short_text, presentation,  #can't include doc date because they can be different per wbs_element (i.e. vaccine PO and freight PO document date different)
     programme_type
   ) %>% 
   rename(product_presentation=short_text)
@@ -143,7 +148,7 @@ country_breakdown <- sappos2 %>%
   filter(fund=="1000002") %>% 
   mutate(short_text = if_else(material_group=="9003", "Country Vaccine cost", short_text)) %>% 
   group_by(
-    wbs_element, iso3, budget_period, vaccine_group_wbs, product_presentation, presentation, 
+    wbs_element_material, wbs_element, iso3, budget_period, vaccine_group_wbs, product_presentation, presentation, 
     programme_type, short_text
   ) |> 
   summarise(
@@ -157,7 +162,8 @@ country_breakdown <- sappos2 %>%
   ) %>% 
   relocate(`Country Vaccine cost`, .after=programme_type)
 
-names(country_breakdown)[9:13] <- paste0("Country ", names(country_breakdown)[9:13])
+names(country_breakdown)[which(names(country_breakdown)=="Freight  costs - doses"):which(names(country_breakdown)=="Syringe, Re-constitution")] <- 
+  paste0("Country ", names(country_breakdown)[which(names(country_breakdown)=="Freight  costs - doses"):which(names(country_breakdown)=="Syringe, Re-constitution")])#equals to [10:14]
 
 #### Gavi contribution table ####
 
@@ -165,7 +171,7 @@ names(country_breakdown)[9:13] <- paste0("Country ", names(country_breakdown)[9:
 gavi <- sappos2 %>% 
   filter(fund!="1000002") %>% 
   group_by(
-    wbs_element, iso3, budget_period, vaccine_group_wbs, product_presentation,  #uniquely identified by product_presentation
+    wbs_element_material, wbs_element, iso3, budget_period, vaccine_group_wbs, product_presentation,  #uniquely identified by product_presentation
     programme_type
   ) |> 
   summarise(
@@ -179,7 +185,7 @@ gavi <- sappos2 %>%
 gavi_product <- sappos2 %>% 
   filter(fund!="1000002" & material_group=="9003") %>% 
   distinct(
-    wbs_element, iso3, budget_period, vaccine_group_wbs, short_text, presentation,  
+    wbs_element_material, wbs_element, iso3, budget_period, vaccine_group_wbs, short_text, presentation,  
     programme_type
   ) %>% 
   rename(product_presentation=short_text)
@@ -189,7 +195,7 @@ gavi_breakdown <- sappos2 %>%
   filter(fund!="1000002") %>%
   mutate(short_text = if_else(material_group=="9003", "Gavi Vaccine cost", short_text)) %>%
   group_by(
-    wbs_element, iso3, budget_period, vaccine_group_wbs, product_presentation, presentation, 
+    wbs_element_material, wbs_element, iso3, budget_period, vaccine_group_wbs, product_presentation, presentation, 
     programme_type, short_text
   ) |>
   summarise(
@@ -203,7 +209,8 @@ gavi_breakdown <- sappos2 %>%
   ) %>% 
   relocate(`Gavi Vaccine cost`, .after=programme_type)
 
-names(gavi_breakdown)[9:15] <- paste0("Gavi ", names(gavi_breakdown)[9:15])
+names(gavi_breakdown)[which(names(gavi_breakdown)=="Syringe, A-D 0.5ml"):which(names(gavi_breakdown)=="Freight costs - doses Donation In-kind")] <- 
+  paste0("Gavi ", names(gavi_breakdown)[which(names(gavi_breakdown)=="Syringe, A-D 0.5ml"):which(names(gavi_breakdown)=="Freight costs - doses Donation In-kind")])#equals to 10:16
 
 #### JOIN TABLES ####
 
@@ -211,7 +218,7 @@ names(gavi_breakdown)[9:15] <- paste0("Gavi ", names(gavi_breakdown)[9:15])
 #   filter(material_group=="9003") %>% 
 #   distinct(wbs_element, short_text)
 
-country_fullbreakdown <- left_join(country, country_product) %>% relocate(presentation, .after="product_presentation")
+country_fullbreakdown <- left_join(country, country_product) %>% relocate(presentation, .after="product_presentation")# the console shows it is joining by wbs_element_material et al - correct
 country_fullbreakdown <- left_join(country_fullbreakdown, country_breakdown)
 
 gavi_fullbreakdown <- left_join(gavi, gavi_product) %>% relocate(presentation, .after="product_presentation")
